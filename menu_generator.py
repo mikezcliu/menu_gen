@@ -7,7 +7,7 @@ from PIL import Image
 from google import genai
 from google.genai import types
 
-from dotenv import load_dotenv  # <--- THIS WAS MISSING
+from dotenv import load_dotenv
 
 # ==========================================
 # 👇 PASTE YOUR KEY INSIDE THE QUOTES BELOW
@@ -29,58 +29,82 @@ def main():
     st.set_page_config(page_title="Nano Menu", layout="wide")
     st.title("🍌 Nano Banana Menu Visualizer")
 
-    # Simple key guard
     if API_KEY == "PASTE_YOUR_KEY_HERE" or not API_KEY:
         st.error("🛑 Missing API Key. Please set API_KEY or GEMINI_API_KEY.")
         st.stop()
 
     client = genai.Client(api_key=API_KEY)
 
+    # Remember chosen style across reruns
+    if "current_style" not in st.session_state:
+        st.session_state["current_style"] = "Michelin fine dining"
+
     uploaded_file = st.file_uploader(
         "Upload Menu Image", type=["jpg", "jpeg", "png"]
     )
 
     if uploaded_file:
-        # Read bytes once so we can reuse them
         image_bytes = uploaded_file.getvalue()
         image_mime = uploaded_file.type or "image/jpeg"
 
         col1, col2 = st.columns([1, 2])
 
-        # ==============
-        # LEFT COLUMN: show original menu
-        # ==============
+        # LEFT: original image + style selector + button
         with col1:
-            # Use raw bytes (Streamlit handles them with PIL internally)
-            st.image(
-                image_bytes,
-                caption="Original Menu",
-                use_container_width=True,
-            )
-            process_btn = st.button("Generate Dish Photos", type="primary")
+            st.image(image_bytes, caption="Original Menu", use_container_width=True)
 
-        # ==============
-        # RIGHT COLUMN: process & generate
-        # ==============
-        if process_btn:
-            with col2:
-                # --- STEP 1: READ MENU (TEXT MODEL) ---
+            # --- STYLE PICKER (user picks FIRST) ---
+            current_style = st.session_state["current_style"]
+            selected_style = st.radio(
+                "Choose photo style (applies to all generated photos)",
+                ["Michelin fine dining", "Street food"],
+                horizontal=True,
+                index=0 if current_style == "Michelin fine dining" else 1,
+                key="style_radio",
+            )
+            st.session_state["current_style"] = selected_style
+
+            generate_btn = st.button("Read Menu & Generate Photos", type="primary")
+
+        # RIGHT: extract menu and generate images
+        with col2:
+            if generate_btn:
+                # --- STEP 1: READ MENU (extract all dishes) ---
                 with st.status("Reading menu text...", expanded=True) as status:
                     extract_prompt = (
-                        "You are reading a restaurant menu image.\n\n"
-                        "Task: Identify the 10 most distinct main dish names from this menu.\n"
-                        "Return ONLY a JSON array of strings, where each string is a dish name.\n\n"
-                        "Example output:\n"
-                        "[\"Truffle Burger\", \"Caesar Salad\", \"Margherita Pizza\", \"Lobster Bisque\"]"
+                        "You are reading a restaurant menu image.\n"
+                        "Extract ALL distinct food and drink items.\n"
+                        "For each item include:\n"
+                        "- name\n"
+                        "- description (if available or inferred)\n\n"
+                        "Return ONLY JSON matching this schema:\n"
+                        "{\n"
+                        "  \"items\": [\n"
+                        "     {\"name\": \"...\", \"description\": \"...\"},\n"
+                        "     ...\n"
+                        "  ]\n"
+                        "}"
                     )
 
-                    # Strict JSON schema: array of strings
                     schema = {
-                        "type": "array",
-                        "items": {"type": "string"},
+                        "type": "object",
+                        "properties": {
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "string"},
+                                        "description": {"type": "string"},
+                                    },
+                                    "required": ["name"],
+                                },
+                            }
+                        },
+                        "required": ["items"],
                     }
 
-                    dish_list = []
+                    dish_items = []
 
                     try:
                         response = client.models.generate_content(
@@ -98,27 +122,22 @@ def main():
                             ),
                         )
 
-                        # Thanks to schema + JSON mode, this should already be a list[str]
                         data = response.parsed
+                        items = data.get("items", [])
 
-                        if not isinstance(data, list):
-                            raise ValueError(
-                                f"Expected a list of dish names, got: {type(data)}"
-                            )
+                        for it in items:
+                            name = str(it.get("name", "")).strip()
+                            desc = str(it.get("description", "")).strip()
+                            if name:
+                                dish_items.append({"name": name, "description": desc})
 
-                        # Normalize to strings and filter empties
-                        dish_list = [
-                            str(d).strip()
-                            for d in data
-                            if str(d).strip()
-                        ]
+                        if not dish_items:
+                            raise ValueError("Model returned no dishes.")
 
-                        if not dish_list:
-                            raise ValueError(
-                                "Model returned an empty list of dishes."
-                            )
+                        # Take only the FIRST 10 for generation
+                        dish_items = dish_items[:10]
 
-                        status.write(f"Found dishes: {dish_list}")
+                        status.write(f"Found {len(dish_items)} dishes. Generating photos...")
                         status.update(
                             label="Menu read successfully ✅",
                             state="complete",
@@ -126,33 +145,44 @@ def main():
                         )
 
                     except Exception as e:
-                        # Helpful debug: show parsed + raw text if we have them
-                        st.caption("Debug: parsed response from model:")
+                        st.caption("Debug: parsed model response:")
                         try:
                             st.json(data)
                         except Exception:
-                            st.write("No parsed data available.")
-                        st.caption("Debug: raw text response (if any):")
-                        try:
-                            st.code(getattr(response, "text", ""), language="json")
-                        except Exception:
-                            st.write("No raw text available.")
+                            st.write("No parsed data.")
                         st.error(f"Error reading menu: {e}")
                         st.stop()
 
-                # --- STEP 2: GENERATE IMAGES (IMAGE MODEL) ---
+                # --- STEP 2: GENERATE FIRST 10 DISH IMAGES based on chosen style ---
                 st.subheader("AI Generated Dish Photos")
-                grid_cols = st.columns(2)
 
-                for i, dish in enumerate(dish_list):
+                style_choice = st.session_state["current_style"]
+                st.caption(f"Style: **{style_choice}**")
+
+                if style_choice == "Michelin fine dining":
+                    style_suffix = (
+                        "Michelin-star fine dining presentation on elegant plates, "
+                        "white tablecloth, soft studio lighting, 4k resolution."
+                    )
+                else:
+                    style_suffix = (
+                        "authentic street food style, casual serving containers, "
+                        "vibrant colors, handheld or paper serving, 4k resolution."
+                    )
+
+                grid_cols = st.columns(2)
+                for i, item in enumerate(dish_items):
+                    name = item["name"]
+                    desc = item.get("description", "")
+
                     col = grid_cols[i % 2]
                     with col:
-                        with st.spinner(f"Plating {dish}..."):
+                        with st.spinner(f"Plating {name}..."):
                             try:
                                 img_prompt = (
-                                    f"Professional food photograph of {dish}, "
-                                    "Michelin-star restaurant style plating, "
-                                    "soft studio lighting, 4k resolution."
+                                    f"High-quality food photograph of {name}. "
+                                    f"{desc} "
+                                    f"{style_suffix}"
                                 )
 
                                 result = client.models.generate_images(
@@ -164,19 +194,19 @@ def main():
                                     ),
                                 )
 
-                                # Convert Google image object → raw bytes → Streamlit
                                 generated = result.generated_images[0]
                                 image_bytes_out = generated.image.image_bytes
 
-                                # Streamlit can take raw bytes directly
                                 st.image(
                                     image_bytes_out,
-                                    caption=dish,
+                                    caption=name,
                                     use_container_width=True,
                                 )
+                                if desc:
+                                    st.caption(desc)
 
                             except Exception as e:
-                                st.warning(f"Could not generate {dish}")
+                                st.warning(f"Could not generate {name}")
                                 st.caption(f"Error: {e}")
 
 
