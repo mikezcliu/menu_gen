@@ -29,7 +29,8 @@ def main():
         st.caption("Get a free key at [aistudio.google.com](https://aistudio.google.com)")
 
     st.title("🍌 Nano Banana Menu Visualizer")
-
+    st.caption("Created by Mike Liu")
+    
     if not api_key_input:
         st.warning("⬅️ Please enter your Google API Key in the sidebar to continue.")
         st.stop()
