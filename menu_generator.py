@@ -9,12 +9,6 @@ from google.genai import types
 
 from dotenv import load_dotenv
 
-# ==========================================
-# 👇 PASTE YOUR KEY INSIDE THE QUOTES BELOW
-# ==========================================
-API_KEY = "AIzaSyDR5owm-muQAnrPkeGMBCsXGGYCeA2_mWs"
-# ==========================================
-
 
 # ==========================================
 # text models defined here
@@ -27,13 +21,21 @@ IMAGE_MODEL_ID = "imagen-4.0-generate-001"
 
 def main():
     st.set_page_config(page_title="Nano Menu", layout="wide")
+
+    # --- CHANGED: Sidebar Input for Security ---
+    with st.sidebar:
+        st.header("Settings")
+        api_key_input = st.text_input("Enter Google Gemini API Key", type="password")
+        st.caption("Get a free key at [aistudio.google.com](https://aistudio.google.com)")
+
     st.title("🍌 Nano Banana Menu Visualizer")
 
-    if API_KEY == "PASTE_YOUR_KEY_HERE" or not API_KEY:
-        st.error("🛑 Missing API Key. Please set API_KEY or GEMINI_API_KEY.")
+    if not api_key_input:
+        st.warning("⬅️ Please enter your Google API Key in the sidebar to continue.")
         st.stop()
 
-    client = genai.Client(api_key=API_KEY)
+    # Initialize client with the user's input key
+    client = genai.Client(api_key=api_key_input)
 
     # Remember chosen style across reruns
     if "current_style" not in st.session_state:
