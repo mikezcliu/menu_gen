@@ -23,7 +23,7 @@ def main():
     st.set_page_config(page_title="Nano Menu", layout="wide")
 
     # --- CHANGED: Sidebar Input for Security ---
-     with st.sidebar:
+    with st.sidebar:
         st.header("Settings")
         api_key_input = st.text_input("Enter Google Gemini API Key", type="password")
         st.caption("Get a free key at [aistudio.google.com](https://aistudio.google.com)")
