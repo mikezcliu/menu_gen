@@ -221,6 +221,8 @@ def main():
                                 st.warning(f"Could not generate {name}")
                                 st.caption(f"Error: {e}")
 
+                st.rerun()
+
             elif st.session_state.get("dish_items"):
                 style_label = st.session_state.get("dish_style", "")
                 st.subheader("AI Generated Dish Photos")
