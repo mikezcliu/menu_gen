@@ -157,10 +157,9 @@ def main():
                         st.stop()
 
                 # --- STEP 2: GENERATE FIRST 10 DISH IMAGES based on chosen style ---
-                st.subheader("AI Generated Dish Photos")
-
                 style_choice = st.session_state["current_style"]
-                st.caption(f"Style: **{style_choice}**")
+                st.session_state["dish_style"] = style_choice
+                st.session_state["dish_items"] = []
 
                 if style_choice == "Michelin fine dining":
                     style_suffix = (
@@ -172,6 +171,9 @@ def main():
                         "authentic street food style, casual serving containers, "
                         "vibrant colors, handheld or paper serving, 4k resolution."
                     )
+
+                st.subheader("AI Generated Dish Photos")
+                st.caption(f"Style: **{style_choice}**")
 
                 grid_cols = st.columns(2)
                 for i, item in enumerate(dish_items):
@@ -200,6 +202,13 @@ def main():
                                 generated = result.generated_images[0]
                                 image_bytes_out = generated.image.image_bytes
 
+                                st.session_state["dish_items"].append({
+                                    "name": name,
+                                    "description": desc,
+                                    "image": image_bytes_out,
+                                    "count": 1,
+                                    "stock": 100,
+                                })
                                 st.image(
                                     image_bytes_out,
                                     caption=name,
@@ -211,6 +220,46 @@ def main():
                             except Exception as e:
                                 st.warning(f"Could not generate {name}")
                                 st.caption(f"Error: {e}")
+
+            elif st.session_state.get("dish_items"):
+                style_label = st.session_state.get("dish_style", "")
+                st.subheader("AI Generated Dish Photos")
+                if style_label:
+                    st.caption(f"Style: **{style_label}**")
+
+                items = st.session_state["dish_items"]
+                grid_cols = st.columns(2)
+                for i, item in enumerate(items):
+                    col = grid_cols[i % 2]
+                    with col:
+                        btn_row = st.columns([1, 1, 1, 4, 1])
+                        with btn_row[0]:
+                            if st.button("−", key=f"dec_{i}", help="Decrease count"):
+                                if item["count"] > 0:
+                                    st.session_state["dish_items"][i]["count"] -= 1
+                                    st.rerun()
+                        with btn_row[1]:
+                            st.markdown(f"**{item['count']}**")
+                        with btn_row[2]:
+                            if st.button("+", key=f"inc_{i}", help="Increase count"):
+                                st.session_state["dish_items"][i]["count"] += 1
+                                st.rerun()
+                        with btn_row[4]:
+                            if st.button("✕", key=f"del_{i}", help=f"Remove {item['name']}"):
+                                st.session_state["dish_items"].pop(i)
+                                st.rerun()
+                        st.image(item["image"], caption=item["name"], use_container_width=True)
+                        if item["description"]:
+                            st.caption(item["description"])
+                        with st.expander("📊 Stock level"):
+                            new_stock = st.slider(
+                                "Remaining",
+                                0, 100,
+                                value=item.get("stock", 100),
+                                format="%d%%",
+                                key=f"stock_{item['name']}",
+                            )
+                            st.session_state["dish_items"][i]["stock"] = new_stock
 
 
 if __name__ == "__main__":
